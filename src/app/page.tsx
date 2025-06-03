@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useRef } from "react"
 import { Share2, Volume2, VolumeX, Heart, Clock, MapPin, BookOpen, Camera, Music, Gift } from "lucide-react"
+import { db } from "./firebase"
+import { collection, getDocs, addDoc, serverTimestamp, query, orderBy } from "firebase/firestore"
 
 export default function EidWebsite() {
   const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 })
@@ -13,13 +15,9 @@ export default function EidWebsite() {
   const [showGuestBook, setShowGuestBook] = useState(false)
   const [showGallery, setShowGallery] = useState(false)
   const [showPrayerTimes, setShowPrayerTimes] = useState(false)
+  const [guestMessages, setGuestMessages] = useState([])
   const [guestMessage, setGuestMessage] = useState("")
   const [guestName, setGuestName] = useState("")
-  const [guestMessages, setGuestMessages] = useState([
-    { name: "Ahmed Ali", message: "Eid Mubarak to everyone! May Allah bless us all.", time: "2 hours ago" },
-    { name: "Fatima Hassan", message: "Wishing you joy and prosperity this Eid!", time: "4 hours ago" },
-    { name: "Omar Khalil", message: "May this blessed day bring peace to all.", time: "6 hours ago" },
-  ])
 
   const audioRef = useRef<HTMLAudioElement>(null)
 
@@ -79,6 +77,21 @@ export default function EidWebsite() {
     return () => clearInterval(timer)
   }, [])
 
+  // جلب الرسائل من Firestore
+  useEffect(() => {
+    const fetchMessages = async () => {
+      const q = query(collection(db, "guestMessages"), orderBy("timestamp", "desc"))
+      const querySnapshot = await getDocs(q)
+      setGuestMessages(
+        querySnapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }))
+      )
+    }
+    fetchMessages()
+  }, [])
+
   const handleEidMubarakClick = () => {
     setShowConfetti(true)
     setShowGreeting(true)
@@ -116,17 +129,25 @@ export default function EidWebsite() {
     }
   }
 
-  const addGuestMessage = () => {
-    if (guestName.trim() && guestMessage.trim()) {
-      const newMessage = {
-        name: guestName,
-        message: guestMessage,
-        time: "Just now",
-      }
-      setGuestMessages([newMessage, ...guestMessages])
-      setGuestName("")
-      setGuestMessage("")
-    }
+  // إضافة رسالة جديدة
+  const handleAddMessage = async () => {
+    if (!guestName || !guestMessage) return
+    await addDoc(collection(db, "guestMessages"), {
+      name: guestName,
+      message: guestMessage,
+      timestamp: serverTimestamp(),
+    })
+    setGuestMessage("")
+    setGuestName("")
+    // إعادة جلب الرسائل بعد الإضافة
+    const q = query(collection(db, "guestMessages"), orderBy("timestamp", "desc"))
+    const querySnapshot = await getDocs(q)
+    setGuestMessages(
+      querySnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }))
+    )
   }
 
   if (!mounted) return null
@@ -350,7 +371,7 @@ export default function EidWebsite() {
                   className="w-full p-3 rounded-lg bg-white/20 text-white placeholder-white/60 border border-pink-300/30 resize-none"
                 />
                 <button
-                  onClick={addGuestMessage}
+                  onClick={handleAddMessage}
                   className="bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white p-2 rounded-lg transition-all duration-300 flex items-center"
                 >
                   <Heart className="h-4 w-4 mr-2" />
@@ -365,7 +386,11 @@ export default function EidWebsite() {
                 <div key={index} className="p-4 bg-white/10 rounded-lg">
                   <div className="flex justify-between items-start mb-2">
                     <span className="font-semibold text-pink-200">{msg.name}</span>
-                    <span className="text-pink-300 text-sm">{msg.time}</span>
+                    <span className="text-pink-300 text-sm">
+                      {msg.timestamp && msg.timestamp.toDate
+                        ? msg.timestamp.toDate().toLocaleString()
+                        : ""}
+                    </span>
                   </div>
                   <p className="text-white">{msg.message}</p>
                 </div>
