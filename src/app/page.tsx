@@ -2,8 +2,15 @@
 
 import { useState, useEffect, useRef } from "react"
 import { Share2, Volume2, VolumeX, Heart, Clock, MapPin, BookOpen, Camera, Music, Gift } from "lucide-react"
-import { db } from "./firebase"
-import { collection, getDocs, addDoc, serverTimestamp, query, orderBy } from "firebase/firestore"
+import { db, app } from "./firebase" // Make sure to export 'app' from your firebase.js
+import { collection, getDocs, addDoc, serverTimestamp, query, orderBy, DocumentData, QueryDocumentSnapshot } from "firebase/firestore"
+
+type GuestMessage = {
+  id: string
+  name: string
+  message: string
+  timestamp?: { toDate: () => Date }
+}
 
 export default function EidWebsite() {
   const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 })
@@ -15,7 +22,7 @@ export default function EidWebsite() {
   const [showGuestBook, setShowGuestBook] = useState(false)
   const [showGallery, setShowGallery] = useState(false)
   const [showPrayerTimes, setShowPrayerTimes] = useState(false)
-  const [guestMessages, setGuestMessages] = useState([])
+  const [guestMessages, setGuestMessages] = useState<GuestMessage[]>([])
   const [guestMessage, setGuestMessage] = useState("")
   const [guestName, setGuestName] = useState("")
 
@@ -23,7 +30,7 @@ export default function EidWebsite() {
 
   const songs = [
     { name: "Peaceful Recitation", src: "/eid-music-2.mp3" },
-    { name: "Traditional Eid Nasheed", src: "/arabic.mp4" },
+    { name: "Traditional Eid Nasheed", src: "/arabic.mp4" }, // Change to .mp3 if possible
     { name: "Festive Celebration", src: "/eid-music-3.mp3" },
   ]
 
@@ -45,25 +52,27 @@ export default function EidWebsite() {
     { src: "/placeholder.svg?height=300&width=400", caption: "Traditional Eid sweets and treats" },
   ]
 
+  // Mount effect for music
   useEffect(() => {
     setMounted(true)
     setTimeout(() => {
       if (audioRef.current) {
-        audioRef.current.play().catch(() => {
-          console.log("Autoplay prevented by browser")
+        audioRef.current.play().then(() => {
+          setMusicPlaying(true)
+        }).catch(() => {
+          // Autoplay prevented, user must click play
+          setMusicPlaying(false)
         })
-        setMusicPlaying(true)
       }
     }, 1000)
   }, [])
 
+  // Countdown timer
   useEffect(() => {
-    const eidDate = new Date("2025-06-16T00:00:00")
-
+    const eidDate = new Date("2025-06-06T00:00:00")
     const timer = setInterval(() => {
       const now = new Date().getTime()
       const distance = eidDate.getTime() - now
-
       if (distance > 0) {
         setTimeLeft({
           days: Math.floor(distance / (1000 * 60 * 60 * 24)),
@@ -73,24 +82,39 @@ export default function EidWebsite() {
         })
       }
     }, 1000)
-
     return () => clearInterval(timer)
   }, [])
 
-  // جلب الرسائل من Firestore
+  // Fetch guest messages from Firestore
   useEffect(() => {
     const fetchMessages = async () => {
       const q = query(collection(db, "guestMessages"), orderBy("timestamp", "desc"))
       const querySnapshot = await getDocs(q)
       setGuestMessages(
-        querySnapshot.docs.map((doc) => ({
+        querySnapshot.docs.map((doc: QueryDocumentSnapshot<DocumentData>) => ({
           id: doc.id,
           ...doc.data(),
-        }))
+        })) as GuestMessage[]
       )
     }
     fetchMessages()
   }, [])
+
+  // Initialize Firebase Analytics (client-side only)
+  useEffect(() => {
+    // Dynamically import analytics only on the client
+    const initAnalytics = async () => {
+      if (typeof window !== "undefined") {
+        const { getAnalytics, isSupported } = await import("firebase/analytics");
+        isSupported().then((yes) => {
+          if (yes) {
+            getAnalytics(app);
+          }
+        });
+      }
+    };
+    initAnalytics();
+  }, []);
 
   const handleEidMubarakClick = () => {
     setShowConfetti(true)
@@ -103,7 +127,9 @@ export default function EidWebsite() {
     const message =
       "🌙 Eid Al-Adha Mubarak! 🐑\n\nMay this blessed day bring joy, peace, and prosperity to you and your loved ones. May Allah accept your prayers and sacrifices.\n\nعيد أضحى مبارك! 🌟✨"
     const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`
-    window.open(whatsappUrl, "_blank")
+    if (typeof window !== "undefined") {
+      window.open("https://www.instagram.com/amine.mohamed_146?igsh=MWI4cmp5MWp0N3g3eg==" , "_blank")
+    }
   }
 
   const toggleMusic = () => {
@@ -120,16 +146,17 @@ export default function EidWebsite() {
   }
 
   const nextSong = () => {
-    setCurrentSong((prev) => (prev + 1) % songs.length)
+    const nextIndex = (currentSong + 1) % songs.length
+    setCurrentSong(nextIndex)
     if (audioRef.current) {
-      audioRef.current.src = songs[(currentSong + 1) % songs.length].src
+      audioRef.current.src = songs[nextIndex].src
       if (musicPlaying) {
         audioRef.current.play()
       }
     }
   }
 
-  // إضافة رسالة جديدة
+  // Add a new guest message
   const handleAddMessage = async () => {
     if (!guestName || !guestMessage) return
     await addDoc(collection(db, "guestMessages"), {
@@ -139,14 +166,14 @@ export default function EidWebsite() {
     })
     setGuestMessage("")
     setGuestName("")
-    // إعادة جلب الرسائل بعد الإضافة
+    // Re-fetch messages after adding
     const q = query(collection(db, "guestMessages"), orderBy("timestamp", "desc"))
     const querySnapshot = await getDocs(q)
     setGuestMessages(
-      querySnapshot.docs.map((doc) => ({
+      querySnapshot.docs.map((doc: QueryDocumentSnapshot<DocumentData>) => ({
         id: doc.id,
         ...doc.data(),
-      }))
+      })) as GuestMessage[]
     )
   }
 
@@ -156,7 +183,7 @@ export default function EidWebsite() {
     <div className="min-h-screen bg-gradient-to-br from-emerald-900 via-green-800 to-emerald-900 relative overflow-hidden">
       {/* Background Audio */}
       <audio ref={audioRef} loop>
-        <source src={songs[currentSong].src} type="audio/mpeg" />
+        <source src={songs[currentSong].src} type="audio/mp3" />
       </audio>
 
       {/* Enhanced Animated Background Elements */}
@@ -382,8 +409,8 @@ export default function EidWebsite() {
 
             {/* Messages List */}
             <div className="space-y-4">
-              {guestMessages.map((msg, index) => (
-                <div key={index} className="p-4 bg-white/10 rounded-lg">
+              {guestMessages.map((msg) => (
+                <div key={msg.id} className="p-4 bg-white/10 rounded-lg">
                   <div className="flex justify-between items-start mb-2">
                     <span className="font-semibold text-pink-200">{msg.name}</span>
                     <span className="text-pink-300 text-sm">
@@ -423,18 +450,17 @@ export default function EidWebsite() {
       </div>
 
       {/* Main Content */}
-      <div className="container mx-auto px-4 py-8 text-center relative z-10">
+      <div className="container mx-auto px-2 sm:px-4 md:px-8 py-6 md:py-8 text-center relative z-10">
         {/* Enhanced Hero Section */}
-        <div className="mb-12">
-          <h1 className="text-5xl md:text-8xl lg:text-9xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-yellow-300 to-yellow-500 mb-6 animate-bounce drop-shadow-2xl">
+        <div className="mb-8 md:mb-12">
+          <h1 className="text-3xl sm:text-5xl md:text-7xl lg:text-8xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-yellow-300 to-yellow-500 mb-4 md:mb-6 animate-bounce drop-shadow-2xl">
             Eid Al-Adha Mubarak
           </h1>
-
-          <div className="bg-gradient-to-r from-green-600/20 to-emerald-600/20 backdrop-blur-sm rounded-2xl p-6 mx-auto max-w-2xl border border-green-400/30 mb-8">
-            <p className="text-xl md:text-2xl text-white mb-4 leading-relaxed">
+          <div className="bg-gradient-to-r from-green-600/20 to-emerald-600/20 backdrop-blur-sm rounded-2xl p-4 md:p-6 mx-auto max-w-xl md:max-w-2xl border border-green-400/30 mb-6 md:mb-8">
+            <p className="text-base sm:text-xl md:text-2xl text-white mb-2 md:mb-4 leading-relaxed">
               🌟 Welcome to our magical celebration! 🌟
             </p>
-            <div className="text-lg md:text-xl text-yellow-200 font-semibold">
+            <div className="text-base sm:text-lg md:text-xl text-yellow-200 font-semibold">
               Presented by{" "}
               <span className="text-yellow-400 hover:text-yellow-300 transition-colors duration-300 cursor-default">
                 Haicheur Mohamed Amine
@@ -471,7 +497,11 @@ export default function EidWebsite() {
             </button>
 
             <button
-              onClick={() => window.open("https://example.com/eid-gifts", "_blank")}
+              onClick={() => {
+                if (typeof window !== "undefined") {
+                  window.open("https://amine-web-site.web.app", "_blank")
+                }
+              }}
               className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white font-semibold text-lg px-8 py-6 rounded-full shadow-lg transform hover:scale-105 transition-all duration-300 flex items-center"
             >
               <Gift className="mr-2 h-5 w-5" />
