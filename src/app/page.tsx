@@ -351,7 +351,7 @@ export default function EidWebsite() {
                 <div key={index} className="group">
                   <div className="relative overflow-hidden rounded-lg">
                     <img
-                      src={image.src || "/placeholder.svg"}
+                      src={image.src || "/Mouton de l'Aïd al-Adha.png"}
                       alt={image.caption}
                       className="w-full h-48 object-cover group-hover:scale-110 transition-transform duration-300"
                     />
